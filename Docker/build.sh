@@ -1,18 +1,25 @@
 #!/bin/bash
-service bluetooth start
-service dbus start
+/etc/init.d/bluetooth stop
+/etc/init.d/bluetooth start
+dbus-launch
+#service bluetooth start
+#service dbus start
+systemctl enable bluetooth
+systemctl restart bluetooth
+systemctl status bluetooth
 hcitool dev
-#hciconfig hci0 up
+hciconfig hci0 up
 
-#hcitool scan
+hcitool scan
 
 #echo -e "scan on\nexit" | bluetoothctl
 
-#hciconfig hci0 sspmode 0
-#hciconfig hci0 piscan
+hciconfig hci0 sspmode 0
+hciconfig hci0 piscan
 sleep 2
 
-/app/bluetooth-connect.exp
+./app/bluetooth-connect.exp
+
 
 coproc bluetoothctl
 

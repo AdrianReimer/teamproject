@@ -1,23 +1,15 @@
 #!/usr/bin/expect -f
 
-send_user -- "----> Attempting to connect to: $env(BT_DEVICE) with PIN $env(BT_PIN)\n\n"
+send_user -- "----> Attempting to connect to: 5C:BA:37:FE:E0:03\n\n"
 
 set timeout -1
 
 spawn bluetoothctl
-expect -re {(?:^|\r|\n).{0,8}\[bluetooth\].{0,8}# }
 send "pairable on\n"
-expect -re {(?:^|\r|\n).{0,8}\[bluetooth\].{0,8}# }
 send "agent on\n"
-expect "Agent registered"
 
-expect -re {(?:^|\r|\n).{0,8}\[bluetooth\].{0,8}# }
 send "default-agent\n"
-expect "Default agent request successful"
 
-set timeout 3
-set paired False
-expect -re {(?:^|\r|\n).{0,8}\[bluetooth\].{0,8}# }
 send "paired-devices\n"
 expect "Device 5C:BA:37:FE:E0:03" {
   set paired True
