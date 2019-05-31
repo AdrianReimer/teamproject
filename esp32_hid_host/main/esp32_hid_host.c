@@ -50,6 +50,26 @@
 #include "btstack.h"
 
 #define MAX_ATTRIBUTE_VALUE_SIZE 300
+#define HUNDRED 100
+// Xbox One Controller
+#define MAC_ADDRESS "5C-BA-37-FE-E0-03"
+#define JOYSTICK_FULL 65535
+#define TRIGGER_FULL 1023
+#define DPAD_UP 1
+#define DPAD_RIGHT 3
+#define DPAD_DOWN 5
+#define DPAD_LEFT 7
+#define BUTTON_A 1
+#define BUTTON_B 2
+#define BUTTON_X 4
+#define BUTTON_Y 8
+#define BUTTON_LEFT 16
+#define BUTTON_RIGHT 32
+#define BUTTON_BACK 64
+#define BUTTON_START 128
+#define LEFT_STICK_PUSH 1
+#define RIGHT_STICK_PUSH 2
+
 
 // SDP
 static uint8_t            hid_descriptor[MAX_ATTRIBUTE_VALUE_SIZE];
@@ -66,7 +86,7 @@ static uint16_t           l2cap_hid_control_cid;
 static uint16_t           l2cap_hid_interrupt_cid;
 
 // Xbox One Controller
-static const char * remote_addr_string = "5C-BA-37-FE-E0-03"; // Mac-Address
+static const char * remote_addr_string = MAC_ADDRESS;
 
 static bd_addr_t remote_addr;
 
@@ -79,6 +99,12 @@ static btstack_packet_callback_registration_t hci_event_callback_registration;
  */
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
+static void check_controller_joystick_move(uint16_t packet3, uint16_t packet5, uint16_t packet7, uint16_t packet9);
+static void check_controller_trigger(uint16_t packet11, uint16_t packet13);
+static void check_controller_dpad(uint8_t packet15);
+static void check_controller_button(uint8_t packet16);
+static void check_controller_joystick_push(uint8_t packet17);
+static void handle_controller_interrupts(uint8_t *packet, uint16_t size);
 
 static void hid_host_setup(void){
     // Initialize L2CAP 
@@ -273,27 +299,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
             break;
         case L2CAP_DATA_PACKET:
             if (channel == l2cap_hid_interrupt_cid){
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d ",*packet++);
-                printf("%d \n",*packet++);
-                //hid_host_handle_interrupt_report(packet,  size);
+                handle_controller_interrupts(packet, size);
             } else if (channel == l2cap_hid_control_cid){
                 printf("HID Control: ");
                 printf_hexdump(packet, size);
@@ -303,6 +309,95 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
         default:
             break;
     }
+}
+
+static void check_controller_joystick_move(uint16_t packet3, uint16_t packet5, uint16_t packet7, uint16_t packet9) {
+    printf("LJoy_x: %d%\n",((packet3 * HUNDRED) / JOYSTICK_FULL));
+    printf("LJoy_y: %d%\n",((packet5 * HUNDRED) / JOYSTICK_FULL));
+    printf("RJoy_x: %d%\n",((packet7 * HUNDRED) / JOYSTICK_FULL));
+    printf("RJoy_y: %d%\n",((packet9 * HUNDRED) / JOYSTICK_FULL));
+    // ...
+}
+
+static void check_controller_trigger(uint16_t packet11, uint16_t packet13) {
+    printf("LT: %d%\n",((packet11 * HUNDRED) / TRIGGER_FULL));
+    printf("RT: %d%\n",((packet13 * HUNDRED) / TRIGGER_FULL));
+    // ...
+}
+
+static void check_controller_dpad(uint8_t packet15) {
+    if(packet15 == DPAD_UP) {
+        printf("dpad Up pressed\n");
+    }
+    if(packet15 == DPAD_RIGHT) {
+        printf("dpad Right pressed\n");
+    }
+    if(packet15 == DPAD_DOWN) {
+        printf("dpad Down pressed\n");
+    }
+    if(packet15 == DPAD_LEFT) {
+        printf("dpad Left pressed\n");
+    }
+}
+
+static void check_controller_button(uint8_t packet16) {
+    if(packet16 & BUTTON_A) {
+        printf("button A pressed\n");
+    }
+    if(packet16 & BUTTON_B) {
+        printf("button B pressed\n");
+    }
+    if(packet16 & BUTTON_X) {
+        printf("button X pressed\n");
+    }
+    if(packet16 & BUTTON_Y) {
+        printf("button Y pressed\n");
+    }
+    if(packet16 & BUTTON_LEFT) {
+        printf("button left pressed\n");
+    }
+    if(packet16 & BUTTON_RIGHT) {
+        printf("button right pressed\n");
+    }
+    if(packet16 & BUTTON_BACK) {
+        printf("button back pressed\n");
+    }
+    if(packet16 & BUTTON_START) {
+        printf("button start pressed\n");
+    }
+}
+
+static void check_controller_joystick_push(uint8_t packet17) {
+    if(packet17 & LEFT_STICK_PUSH) {
+        printf("Left Joystick pushed\n");
+    }
+    if(packet17 & RIGHT_STICK_PUSH) {
+        printf("Right Joystick pushed\n");
+    }
+}
+
+static void handle_controller_interrupts(uint8_t *packet, uint16_t size) {
+    packet+=2;
+    // joystick
+    uint8_t packet3 = *packet++;
+    uint8_t packet4 = *packet++;
+    uint8_t packet5 = *packet++;
+    uint8_t packet6 = *packet++;
+    uint8_t packet7 = *packet++;
+    uint8_t packet8 = *packet++;
+    uint8_t packet9 = *packet++;
+    uint8_t packet10 = *packet++;
+    check_controller_joystick_move(((uint16_t)packet4 << 8) | packet3, ((uint16_t)packet6 << 8) | packet5, ((uint16_t)packet8 << 8) | packet7, ((uint16_t)packet10 << 8) | packet9);
+    // trigger
+    uint8_t packet11 = *packet++;
+    uint8_t packet12 = *packet++;
+    uint8_t packet13 = *packet++;
+    uint8_t packet14 = *packet++;
+    check_controller_trigger(((uint16_t)packet12 << 8) | packet11, ((uint16_t)packet14 << 8) | packet13);
+    // push buttons
+    check_controller_dpad(*packet++);
+    check_controller_button(*packet++);
+    check_controller_joystick_push(*packet);
 }
 
 int btstack_main(int argc, const char * argv[]);
