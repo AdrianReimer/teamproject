@@ -51,8 +51,10 @@
 
 #define MAX_ATTRIBUTE_VALUE_SIZE 300
 #define HUNDRED 100
-// Xbox One Controller
+// ### Xbox One Controller
+// Address
 #define MAC_ADDRESS "5C-BA-37-FE-E0-03"
+// Controls
 #define JOYSTICK_FULL 65535
 #define TRIGGER_FULL 1023
 #define DPAD_UP 1
@@ -69,7 +71,9 @@
 #define BUTTON_START 128
 #define LEFT_STICK_PUSH 1
 #define RIGHT_STICK_PUSH 2
-
+// Bluetooth packets
+#define JOYSTICK_PACKET_SIZE 4 // 2 bytes for x and y
+#define TRIGGER_PACKET_SIZE 2 // just one direction
 
 // SDP
 static uint8_t            hid_descriptor[MAX_ATTRIBUTE_VALUE_SIZE];
@@ -99,11 +103,15 @@ static btstack_packet_callback_registration_t hci_event_callback_registration;
  */
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void handle_sdp_client_query_result(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
-static void check_controller_joystick_move(uint16_t packet3, uint16_t packet5, uint16_t packet7, uint16_t packet9);
-static void check_controller_trigger(uint16_t packet11, uint16_t packet13);
+static void check_controller_joystick_left_move(uint16_t left_joy_x, uint16_t left_joy_y);
+static void check_controller_joystick_right_move(uint16_t right_joy_x, uint16_t right_joy_y);
+static void check_controller_trigger_left(uint16_t left_trigger_pos);
+static void check_controller_trigger_right(uint16_t right_trigger_pos);
 static void check_controller_dpad(uint8_t packet15);
 static void check_controller_button(uint8_t packet16);
 static void check_controller_joystick_push(uint8_t packet17);
+static int fill_joystick_data(uint8_t joystick_packets[], uint8_t *packet);
+static int fill_trigger_data(uint8_t trigger_packets[], uint8_t *packet);
 static void handle_controller_interrupts(uint8_t *packet, uint16_t size);
 
 static void hid_host_setup(void){
@@ -311,20 +319,33 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
     }
 }
 
-static void check_controller_joystick_move(uint16_t packet3, uint16_t packet5, uint16_t packet7, uint16_t packet9) {
-    printf("LJoy_x: %d%\n",((packet3 * HUNDRED) / JOYSTICK_FULL));
-    printf("LJoy_y: %d%\n",((packet5 * HUNDRED) / JOYSTICK_FULL));
-    printf("RJoy_x: %d%\n",((packet7 * HUNDRED) / JOYSTICK_FULL));
-    printf("RJoy_y: %d%\n",((packet9 * HUNDRED) / JOYSTICK_FULL));
+/* handles left Joystick rotation */
+static void check_controller_joystick_left_move(uint16_t left_joy_x, uint16_t left_joy_y) {
+    printf("LJoy_x: %d%\n",((left_joy_x * HUNDRED) / JOYSTICK_FULL));
+    printf("LJoy_y: %d%\n",((left_joy_y * HUNDRED) / JOYSTICK_FULL));
     // ...
 }
 
-static void check_controller_trigger(uint16_t packet11, uint16_t packet13) {
-    printf("LT: %d%\n",((packet11 * HUNDRED) / TRIGGER_FULL));
-    printf("RT: %d%\n",((packet13 * HUNDRED) / TRIGGER_FULL));
+/* handles right Joystick rotation */
+static void check_controller_joystick_right_move(uint16_t right_joy_x, uint16_t right_joy_y) {
+    printf("RJoy_x: %d%\n",((right_joy_x * HUNDRED) / JOYSTICK_FULL));
+    printf("RJoy_y: %d%\n",((right_joy_y * HUNDRED) / JOYSTICK_FULL));
     // ...
 }
 
+/* handles left Trigger (LT) position */
+static void check_controller_trigger_left(uint16_t left_trigger_pos) {
+    printf("LT: %d%\n",((left_trigger_pos * HUNDRED) / TRIGGER_FULL));
+    // ...
+}
+
+/* handles right Trigger (RT) position */
+static void check_controller_trigger_right(uint16_t right_trigger_pos) {
+    printf("RT: %d%\n",((right_trigger_pos * HUNDRED) / TRIGGER_FULL));
+    // ...
+}
+
+/* handles directional-pad (Dpad) button presses */
 static void check_controller_dpad(uint8_t packet15) {
     if(packet15 == DPAD_UP) {
         printf("dpad Up pressed\n");
@@ -340,6 +361,7 @@ static void check_controller_dpad(uint8_t packet15) {
     }
 }
 
+/* handles action and setting button presses */
 static void check_controller_button(uint8_t packet16) {
     if(packet16 & BUTTON_A) {
         printf("button A pressed\n");
@@ -367,6 +389,7 @@ static void check_controller_button(uint8_t packet16) {
     }
 }
 
+/* handles Joystick button push */
 static void check_controller_joystick_push(uint8_t packet17) {
     if(packet17 & LEFT_STICK_PUSH) {
         printf("Left Joystick pushed\n");
@@ -376,24 +399,78 @@ static void check_controller_joystick_push(uint8_t packet17) {
     }
 }
 
+/*
+ * fills joystick data array with the respcetive bt packets
+ * @return 1 if data in array changed
+ */
+static int fill_joystick_data(uint8_t joystick_packets[], uint8_t *packet) {
+    uint32_t i, changed;
+    for(i = 0, changed = 0; i < JOYSTICK_PACKET_SIZE; i++) {
+        if(joystick_packets[i] != *packet) {
+            joystick_packets[i] = *packet++;
+            changed = 1;
+        } else {
+            packet++;
+        }
+    }
+    return changed;
+}
+
+/*
+ * fills trigger data array with the respcetive bt packets
+ * @return 1 if data in array changed
+ */
+static int fill_trigger_data(uint8_t trigger_packets[], uint8_t *packet) {
+    uint32_t i, changed;
+    for(i = 0, changed = 0; i < TRIGGER_PACKET_SIZE; i++) {
+        if(trigger_packets[i] != *packet) {
+            trigger_packets[i] = *packet++;
+            changed = 1;
+        } else {
+            packet++;
+        }
+    }
+    return changed;
+}
+
+/* handles the controller interrupts */
 static void handle_controller_interrupts(uint8_t *packet, uint16_t size) {
-    packet+=2;
-    // joystick
-    uint8_t packet3 = *packet++;
-    uint8_t packet4 = *packet++;
-    uint8_t packet5 = *packet++;
-    uint8_t packet6 = *packet++;
-    uint8_t packet7 = *packet++;
-    uint8_t packet8 = *packet++;
-    uint8_t packet9 = *packet++;
-    uint8_t packet10 = *packet++;
-    check_controller_joystick_move(((uint16_t)packet4 << 8) | packet3, ((uint16_t)packet6 << 8) | packet5, ((uint16_t)packet8 << 8) | packet7, ((uint16_t)packet10 << 8) | packet9);
-    // trigger
-    uint8_t packet11 = *packet++;
-    uint8_t packet12 = *packet++;
-    uint8_t packet13 = *packet++;
-    uint8_t packet14 = *packet++;
-    check_controller_trigger(((uint16_t)packet12 << 8) | packet11, ((uint16_t)packet14 << 8) | packet13);
+    static uint8_t joystick_left_packets[JOYSTICK_PACKET_SIZE], joystick_right_packets[JOYSTICK_PACKET_SIZE];
+    static uint8_t trigger_left_packets[TRIGGER_PACKET_SIZE], trigger_right_packets[TRIGGER_PACKET_SIZE];
+    // skip unimportant packets
+    packet += 2;
+    // joystick packets
+    {
+        // Left
+        if(fill_joystick_data(joystick_left_packets, packet)) {
+            uint16_t left_joy_x = joystick_left_packets[1] << 8 | joystick_left_packets[0];
+            uint16_t left_joy_y = joystick_left_packets[3] << 8 | joystick_left_packets[2];
+            check_controller_joystick_left_move(left_joy_x, left_joy_y);
+        }
+        packet += JOYSTICK_PACKET_SIZE;
+        // Right
+        if(fill_joystick_data(joystick_right_packets, packet)) {
+            uint16_t right_joy_x = joystick_right_packets[1] << 8 | joystick_right_packets[0];
+            uint16_t right_joy_y = joystick_right_packets[3] << 8 | joystick_right_packets[2];
+            check_controller_joystick_right_move(right_joy_x, right_joy_y);
+        }
+        packet += JOYSTICK_PACKET_SIZE;
+    }
+    // trigger packets
+    {
+        // Left
+        if(fill_trigger_data(trigger_left_packets, packet)) {
+            uint16_t left_trigger_pos = trigger_left_packets[1] << 8 | trigger_left_packets[0];
+            check_controller_trigger_left(left_trigger_pos);
+        }
+        packet += TRIGGER_PACKET_SIZE;
+        // Right
+        if(fill_trigger_data(trigger_right_packets, packet)) {
+            uint16_t right_trigger_pos = trigger_right_packets[1] << 8 | trigger_right_packets[0];
+            check_controller_trigger_right(right_trigger_pos);
+        }
+        packet += TRIGGER_PACKET_SIZE;
+    }
     // push buttons
     check_controller_dpad(*packet++);
     check_controller_button(*packet++);
