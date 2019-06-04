@@ -45,9 +45,12 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <math.h>
 
 #include "btstack_config.h"
 #include "btstack.h"
+#include "driver/ledc.h"
+#include "esp_err.h"
 
 #define MAX_ATTRIBUTE_VALUE_SIZE 300
 #define HUNDRED 100
@@ -74,6 +77,17 @@
 // Bluetooth packets
 #define JOYSTICK_PACKET_SIZE 4 // 2 bytes for x and y
 #define TRIGGER_PACKET_SIZE 2 // just one direction
+// PWM
+#define PWM_FREQ 62 // Hz
+#define MOTOR_PWM_CHANNEL_1 LEDC_CHANNEL_1
+#define MOTOR_PWM_CHANNEL_2 LEDC_CHANNEL_2
+#define MOTOR_PWM_CHANNEL_3 LEDC_CHANNEL_3
+#define MOTOR_PWM_TIMER LEDC_TIMER_1
+#define MOTOR_PWM_BIT_NUM LEDC_TIMER_10_BIT
+// GPIO
+#define PWM1_PIN GPIO_NUM_19
+#define PWM2_PIN GPIO_NUM_21
+#define PWM3_PIN GPIO_NUM_18
 
 // SDP
 static uint8_t            hid_descriptor[MAX_ATTRIBUTE_VALUE_SIZE];
@@ -92,6 +106,10 @@ static uint16_t           l2cap_hid_interrupt_cid;
 // Xbox One Controller
 static const char * remote_addr_string = MAC_ADDRESS;
 
+static ledc_channel_config_t pwm1;
+static ledc_channel_config_t pwm2;
+static ledc_channel_config_t pwm3;
+
 static bd_addr_t remote_addr;
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
@@ -107,12 +125,17 @@ static void check_controller_joystick_left_move(uint16_t left_joy_x, uint16_t le
 static void check_controller_joystick_right_move(uint16_t right_joy_x, uint16_t right_joy_y);
 static void check_controller_trigger_left(uint16_t left_trigger_pos);
 static void check_controller_trigger_right(uint16_t right_trigger_pos);
+static float calc_speed_motor(uint16_t value);
 static void check_controller_dpad(uint8_t packet15);
 static void check_controller_button(uint8_t packet16);
 static void check_controller_joystick_push(uint8_t packet17);
 static int fill_joystick_data(uint8_t joystick_packets[], uint8_t *packet);
 static int fill_trigger_data(uint8_t trigger_packets[], uint8_t *packet);
 static void handle_controller_interrupts(uint8_t *packet, uint16_t size);
+static void motor_pwm_init(void);
+static void pwm1_duty_set(float perc);
+static void pwm2_duty_set(float perc);
+static void pwm3_duty_set(float perc);
 
 static void hid_host_setup(void){
     // Initialize L2CAP 
@@ -320,6 +343,8 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 }
 
 /* handles left Joystick rotation */
+/* 100 in y ist unten 0 ist oben
+ 0 in x ist links 100 ist rechts*/
 static void check_controller_joystick_left_move(uint16_t left_joy_x, uint16_t left_joy_y) {
     printf("LJoy_x: %d%\n",((left_joy_x * HUNDRED) / JOYSTICK_FULL));
     printf("LJoy_y: %d%\n",((left_joy_y * HUNDRED) / JOYSTICK_FULL));
@@ -335,14 +360,20 @@ static void check_controller_joystick_right_move(uint16_t right_joy_x, uint16_t 
 
 /* handles left Trigger (LT) position */
 static void check_controller_trigger_left(uint16_t left_trigger_pos) {
-    printf("LT: %d%\n",((left_trigger_pos * HUNDRED) / TRIGGER_FULL));
+    printf("LT: %d%\n",left_trigger_pos);
+    pwm1_duty_set(calc_speed_motor(left_trigger_pos));
     // ...
 }
 
 /* handles right Trigger (RT) position */
 static void check_controller_trigger_right(uint16_t right_trigger_pos) {
-    printf("RT: %d%\n",((right_trigger_pos * HUNDRED) / TRIGGER_FULL));
+    printf("RT: %d%\n",right_trigger_pos);
+    //pwm1_duty_set(calc_speed_motor(left_trigger_pos));
     // ...
+}
+
+static float calc_speed_motor(uint16_t value) {
+    return (0.124121 * value + 60.1);
 }
 
 /* handles directional-pad (Dpad) button presses */
@@ -477,12 +508,72 @@ static void handle_controller_interrupts(uint8_t *packet, uint16_t size) {
     check_controller_joystick_push(*packet);
 }
 
+/* Initializes all three PWM Signals  */
+static void motor_pwm_init(void)
+{
+    {
+        pwm1.gpio_num = PWM1_PIN;
+        pwm1.speed_mode = LEDC_HIGH_SPEED_MODE;
+        pwm1.channel = MOTOR_PWM_CHANNEL_1;
+        pwm1.intr_type = LEDC_INTR_DISABLE;
+        pwm1.timer_sel = MOTOR_PWM_TIMER;
+        pwm1.duty = 200; // 20%
+        printf("pwm1 initialized");
+        
+        pwm2.gpio_num = PWM2_PIN;
+        pwm2.speed_mode = LEDC_HIGH_SPEED_MODE;
+        pwm2.channel = MOTOR_PWM_CHANNEL_2;
+        pwm2.intr_type = LEDC_INTR_DISABLE;
+        pwm2.timer_sel = MOTOR_PWM_TIMER;
+        pwm2.duty = 500; // 50%
+        printf("pwm2 initialized");
+        
+        pwm3.gpio_num = PWM3_PIN;
+        pwm3.speed_mode = LEDC_HIGH_SPEED_MODE;
+        pwm3.channel = MOTOR_PWM_CHANNEL_3;
+        pwm3.intr_type = LEDC_INTR_DISABLE;
+        pwm3.timer_sel = MOTOR_PWM_TIMER;
+        pwm3.duty = 800; // 80%
+        printf("pwm3 initialized");
+    }
+    ledc_timer_config_t ledc_timer = {0};
+    ledc_timer.speed_mode = LEDC_HIGH_SPEED_MODE;
+    ledc_timer.bit_num = MOTOR_PWM_BIT_NUM;
+    ledc_timer.timer_num = MOTOR_PWM_TIMER;
+    ledc_timer.freq_hz = PWM_FREQ; // freq -> 62 Hz
+    
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm1) );
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm2) );
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm3) );
+    ESP_ERROR_CHECK( ledc_timer_config(&ledc_timer) );
+}
+
+/* Sets the dutycicle of PWM1 */
+static void pwm1_duty_set(float perc) {
+    pwm1.duty = perc;
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm1) );
+}
+
+/* Sets the dutycicle of PWM2 */
+static void pwm2_duty_set(float perc) {
+    pwm2.duty = perc;
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm2) );
+}
+
+/* Sets the dutycicle of PWM3 */
+static void pwm3_duty_set(float perc) {
+    pwm3.duty = perc;
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm3) );
+}
+
 int btstack_main(int argc, const char * argv[]);
 int btstack_main(int argc, const char * argv[]){
 
     (void)argc;
     (void)argv;
-
+    
+    // init
+    motor_pwm_init();
     hid_host_setup();
 
     // parse human readable Bluetooth address
