@@ -82,12 +82,14 @@
 #define MOTOR_PWM_CHANNEL_1 LEDC_CHANNEL_1
 #define MOTOR_PWM_CHANNEL_2 LEDC_CHANNEL_2
 #define MOTOR_PWM_CHANNEL_3 LEDC_CHANNEL_3
+#define LED_PWM_CHANNEL_4 LEDC_CHANNEL_4
 #define MOTOR_PWM_TIMER LEDC_TIMER_1
 #define MOTOR_PWM_BIT_NUM LEDC_TIMER_10_BIT
 // GPIO
 #define PWM1_PIN GPIO_NUM_19
 #define PWM2_PIN GPIO_NUM_21
 #define PWM3_PIN GPIO_NUM_18
+#define LED_PIN GPIO_NUM_17
 
 // SDP
 static uint8_t            hid_descriptor[MAX_ATTRIBUTE_VALUE_SIZE];
@@ -109,6 +111,7 @@ static const char * remote_addr_string = MAC_ADDRESS;
 static ledc_channel_config_t pwm1;
 static ledc_channel_config_t pwm2;
 static ledc_channel_config_t pwm3;
+static ledc_channel_config_t pwm4;
 
 static bd_addr_t remote_addr;
 
@@ -136,6 +139,7 @@ static void motor_pwm_init(void);
 static void pwm1_duty_set(float perc);
 static void pwm2_duty_set(float perc);
 static void pwm3_duty_set(float perc);
+static void pwm4_duty_set(float perc);
 
 static void hid_host_setup(void){
     // Initialize L2CAP 
@@ -368,12 +372,13 @@ static void check_controller_trigger_left(uint16_t left_trigger_pos) {
 /* handles right Trigger (RT) position */
 static void check_controller_trigger_right(uint16_t right_trigger_pos) {
     printf("RT: %d%\n",right_trigger_pos);
-    //pwm1_duty_set(calc_speed_motor(left_trigger_pos));
+    pwm4_duty_set(calc_speed_motor(right_trigger_pos));
     // ...
 }
 
+/* calculates the Dutycicle of the speedmotor  */
 static float calc_speed_motor(uint16_t value) {
-    return (0.124121 * value + 60.1);
+    return (0.124121 * value + 60.1); // make defines?
 }
 
 /* handles directional-pad (Dpad) button presses */
@@ -535,6 +540,14 @@ static void motor_pwm_init(void)
         pwm3.timer_sel = MOTOR_PWM_TIMER;
         pwm3.duty = 800; // 80%
         printf("pwm3 initialized");
+        
+        pwm4.gpio_num = LED_PIN;
+        pwm4.speed_mode = LEDC_HIGH_SPEED_MODE;
+        pwm4.channel = LED_PWM_CHANNEL_4;
+        pwm4.intr_type = LEDC_INTR_DISABLE;
+        pwm4.timer_sel = MOTOR_PWM_TIMER;
+        pwm4.duty = 300; // 30%
+        printf("pwm4 initialized");
     }
     ledc_timer_config_t ledc_timer = {0};
     ledc_timer.speed_mode = LEDC_HIGH_SPEED_MODE;
@@ -545,6 +558,7 @@ static void motor_pwm_init(void)
     ESP_ERROR_CHECK( ledc_channel_config(&pwm1) );
     ESP_ERROR_CHECK( ledc_channel_config(&pwm2) );
     ESP_ERROR_CHECK( ledc_channel_config(&pwm3) );
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm4) );
     ESP_ERROR_CHECK( ledc_timer_config(&ledc_timer) );
 }
 
@@ -564,6 +578,12 @@ static void pwm2_duty_set(float perc) {
 static void pwm3_duty_set(float perc) {
     pwm3.duty = perc;
     ESP_ERROR_CHECK( ledc_channel_config(&pwm3) );
+}
+
+/* Sets the dutycicle of PWM4 */
+static void pwm4_duty_set(float perc) {
+    pwm4.duty = perc;
+    ESP_ERROR_CHECK( ledc_channel_config(&pwm4) );
 }
 
 int btstack_main(int argc, const char * argv[]);
