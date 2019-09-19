@@ -1,1 +1,0 @@
-sudo docker run -a stdin -a stdout -i -t  -it --cap-add=SYS_ADMIN --cap-add=NET_ADMIN --net=host adrian447/rpi-test1:latest 
